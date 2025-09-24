@@ -1,14 +1,13 @@
 /*
-  Bronze Layer Data Loading Procedure
-  Warning: Truncates existing bronze tables before loading
-  Instructions:
-    1. Ensure database 'sql_data_warehouse' exists and bronze
-       tables are created
-    2. Connect to 'sql_data_warehouse' before running
-    3. Verify file paths match your local environment
+  Bronze Layer Data Load
+  Warning: Truncates bronze tables before loading
+  Steps:
+    1. Ensure 'sql_data_warehouse' and bronze tables exist
+    2. Connect to 'sql_data_warehouse'
+    3. Update file paths as needed
 */
 
--- Create procedure to load bronze tables
+-- Procedure to load bronze tables
 create or replace procedure bronze.load_bronze()
     language plpgsql
 as
@@ -23,10 +22,10 @@ begin
     raise notice 'Loading Bronze Layer';
     raise notice ' ';
 
-    -- Load CRM tables
+    -- CRM tables
     raise notice 'Loading CRM Tables';
 
-    -- Clear and load customer info
+    -- Customer info
     start_time := current_timestamp;
     raise notice 'Truncating Table: bronze.crm_cust_info';
     truncate bronze.crm_cust_info;
@@ -40,7 +39,7 @@ begin
             extract(seconds from end_time - start_time), 2);
     raise notice ' ';
 
-    -- Clear and load product info
+    -- Product info
     start_time := current_timestamp;
     raise notice 'Truncating Table: bronze.crm_prd_info';
     truncate bronze.crm_prd_info;
@@ -54,7 +53,7 @@ begin
             extract(seconds from end_time - start_time), 2);
     raise notice ' ';
 
-    -- Clear and load sales details
+    -- Sales details
     start_time := current_timestamp;
     raise notice 'Truncating Table: bronze.crm_sales_details';
     truncate bronze.crm_sales_details;
@@ -69,10 +68,10 @@ begin
             extract(seconds from end_time - start_time), 2);
     raise notice ' ';
 
-    -- Load ERP tables
+    -- ERP tables
     raise notice 'Loading ERP Tables';
 
-    -- Clear and load customer demographics
+    -- Customer demographics
     start_time := current_timestamp;
     raise notice 'Truncating Table: bronze.erp_cust_az12';
     truncate bronze.erp_cust_az12;
@@ -85,7 +84,7 @@ begin
             extract(seconds from end_time - start_time), 2);
     raise notice ' ';
 
-    -- Clear and load customer location
+    -- Customer location
     start_time := current_timestamp;
     raise notice 'Truncating Table: bronze.erp_loc_a101';
     truncate bronze.erp_loc_a101;
@@ -98,7 +97,7 @@ begin
             extract(seconds from end_time - start_time), 2);
     raise notice ' ';
 
-    -- Clear and load product categories
+    -- Product categories
     start_time := current_timestamp;
     raise notice 'Truncating Table: bronze.erp_px_cat_g1v2';
     truncate bronze.erp_px_cat_g1v2;
@@ -126,5 +125,5 @@ exception
 end;
 $$;
 
--- Execute bronze load procedure
+-- Run bronze load
 call bronze.load_bronze();

@@ -1,12 +1,12 @@
 /*
-  Bronze Layer Table Creation
+  Bronze Layer Tables
   Warning: Drops existing bronze tables
-  Instructions:
-    1. Ensure database 'sql_data_warehouse' exists
-    2. Connect to 'sql_data_warehouse' before running
+  Steps:
+    1. Ensure 'sql_data_warehouse' exists
+    2. Connect before running
 */
 
--- Drop existing bronze tables
+-- Drop old bronze tables
 drop table if exists bronze.crm_cust_info;
 drop table if exists bronze.crm_prd_info;
 drop table if exists bronze.crm_sales_details;
@@ -14,7 +14,7 @@ drop table if exists bronze.erp_cust_az12;
 drop table if exists bronze.erp_loc_a101;
 drop table if exists bronze.erp_px_cat_g1v2;
 
--- Customer info from CRM
+-- CRM: Customer info
 create table bronze.crm_cust_info
 (
     cst_id int,
@@ -26,7 +26,7 @@ create table bronze.crm_cust_info
     cst_create_date date
 );
 
--- Product info from CRM
+-- CRM: Product info
 create table bronze.crm_prd_info
 (
     prd_id int,
@@ -38,7 +38,7 @@ create table bronze.crm_prd_info
     prd_end_dt date
 );
 
--- Sales details from CRM
+-- CRM: Sales details
 create table bronze.crm_sales_details
 (
     sls_ord_num varchar(50),
@@ -52,7 +52,7 @@ create table bronze.crm_sales_details
     sls_price numeric(10, 2)
 );
 
--- Customer demographics from ERP
+-- ERP: Customer demographics
 create table bronze.erp_cust_az12
 (
     cid varchar(50),
@@ -60,14 +60,14 @@ create table bronze.erp_cust_az12
     gen varchar(50)
 );
 
--- Customer location from ERP
+-- ERP: Customer location
 create table bronze.erp_loc_a101
 (
     cid varchar(50),
     cntry varchar(50)
 );
 
--- Product categories from ERP
+-- ERP: Product categories
 create table bronze.erp_px_cat_g1v2
 (
     id varchar(50),
