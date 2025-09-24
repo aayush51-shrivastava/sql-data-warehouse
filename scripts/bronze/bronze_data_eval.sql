@@ -39,55 +39,57 @@ from tmp_crm_cust_info
 where cst_id is null;
 
 -- Duplicate check on cst_id
-select dedup_entry,
-       row_id,
-       cst_id,
-       cst_key,
-       cst_firstname,
-       cst_lastname,
-       cst_marital_status,
-       cst_gndr,
-       cst_create_date
+select sub.dedup_entry,
+       sub.row_id,
+       sub.cst_id,
+       sub.cst_key,
+       sub.cst_firstname,
+       sub.cst_lastname,
+       sub.cst_marital_status,
+       sub.cst_gndr,
+       sub.cst_create_date
 from (select row_number()
-             over (partition by cst_id order by cst_create_date desc nulls last) as dedup_entry,
-             row_id,
-             cst_id,
-             cst_key,
-             cst_firstname,
-             cst_lastname,
-             cst_marital_status,
-             cst_gndr,
-             cst_create_date
-      from tmp_crm_cust_info) sub
+             over (partition by tci.cst_id order by cst_create_date desc nulls
+                 last) as dedup_entry,
+             tci.row_id,
+             tci.cst_id,
+             tci.cst_key,
+             tci.cst_firstname,
+             tci.cst_lastname,
+             tci.cst_marital_status,
+             tci.cst_gndr,
+             tci.cst_create_date
+      from tmp_crm_cust_info tci) sub
 where dedup_entry > 1;
 
 -- Duplicate check on cst_key
-select dedup_number,
-       row_id,
-       cst_id,
-       cst_key,
-       cst_firstname,
-       cst_lastname,
-       cst_marital_status,
-       cst_gndr,
-       cst_create_date
+select sub.dedup_number,
+       sub.row_id,
+       sub.cst_id,
+       sub.cst_key,
+       sub.cst_firstname,
+       sub.cst_lastname,
+       sub.cst_marital_status,
+       sub.cst_gndr,
+       sub.cst_create_date
 from (select row_number()
-             over (partition by cst_key order by cst_create_date desc nulls last) as dedup_number,
-             row_id,
-             cst_id,
-             cst_key,
-             cst_firstname,
-             cst_lastname,
-             cst_marital_status,
-             cst_gndr,
-             cst_create_date
-      from tmp_crm_cust_info) sub
+             over (partition by tci.cst_key order by cst_create_date desc nulls
+                 last) as dedup_number,
+             tci.row_id,
+             tci.cst_id,
+             tci.cst_key,
+             tci.cst_firstname,
+             tci.cst_lastname,
+             tci.cst_marital_status,
+             tci.cst_gndr,
+             tci.cst_create_date
+      from tmp_crm_cust_info tci) sub
 where dedup_number > 1;
 
 -- Distinct marital_status values
-select distinct cst_marital_status
-from tmp_crm_cust_info;
+select distinct tci.cst_marital_status
+from tmp_crm_cust_info tci;
 
 -- Distinct gndr values
-select distinct cst_gndr
-from tmp_crm_cust_info;
+select distinct tci.cst_gndr
+from tmp_crm_cust_info tci;

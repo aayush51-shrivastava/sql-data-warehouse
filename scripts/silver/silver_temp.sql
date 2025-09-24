@@ -120,8 +120,10 @@ begin
             extract(seconds from end_time - start_time), 2);
     raise notice ' ';
 
-    -- Insert into silver
+    -- Truncate and insert into silver
     start_time := current_timestamp;
+    raise notice 'Truncating Table: silver.crm_cust_info';
+    truncate table silver.crm_cust_info;
     raise notice 'Inserting into silver.crm_cust_info';
     insert into silver.crm_cust_info (cst_id, cst_key, cst_firstname,
                                       cst_lastname, cst_marital_status,
@@ -135,7 +137,7 @@ begin
            cst_create_date
     from tmp_crm_cust_info;
     end_time := current_timestamp;
-    raise notice 'Insert Duration: %s', round(
+    raise notice 'Truncate + Load Duration: %s', round(
             extract(seconds from end_time - start_time), 2);
     raise notice ' ';
 
@@ -164,4 +166,4 @@ exception
 end;
 $$;
 
-call silver.load_crm_cst_info()
+call silver.load_crm_cst_info();
