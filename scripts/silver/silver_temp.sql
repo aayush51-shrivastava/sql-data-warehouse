@@ -248,7 +248,8 @@ begin
     raise notice 'Adjusting overlapping product tenures';
     with next_start as (select tpi.row_id,
                                (lead(tpi.prd_start_dt)
-                                over (partition by tpi.prd_key order by tpi.prd_start_dt) -
+                                over (partition by tpi.prd_key order by tpi
+                                    .prd_start_dt nulls last) -
                                 interval '1 day')::date new_end_dt,
                                tpi.prd_end_dt
                         from tmp_crm_prd_info tpi)

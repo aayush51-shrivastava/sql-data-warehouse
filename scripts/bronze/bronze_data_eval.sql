@@ -1,12 +1,13 @@
 /*
-  Bronze Eval Script
+  Bronze Layer Evaluation
   Purpose: Profile and validate bronze data before silver load
   Steps:
-    1. Ensure bronze.crm_cust_info is populated
+    1. Ensure bronze tables are populated
     2. Connect to 'sql_data_warehouse'
-    3. Run checks below (extend as needed for other bronze tables)
+    3. Run checks below for each bronze table
 */
 
+-- Eval: crm_cust_info
 -- Temp table for crm_cust_info
 drop table if exists tmp_crm_cust_info;
 create temp table tmp_crm_cust_info
@@ -49,8 +50,7 @@ select sub.dedup_entry,
        sub.cst_gndr,
        sub.cst_create_date
 from (select row_number()
-             over (partition by tci.cst_id order by cst_create_date desc nulls
-                 last) as dedup_entry,
+             over (partition by tci.cst_id order by cst_create_date desc nulls last) as dedup_entry,
              tci.row_id,
              tci.cst_id,
              tci.cst_key,
@@ -73,8 +73,7 @@ select sub.dedup_number,
        sub.cst_gndr,
        sub.cst_create_date
 from (select row_number()
-             over (partition by tci.cst_key order by cst_create_date desc nulls
-                 last) as dedup_number,
+             over (partition by tci.cst_key order by cst_create_date desc nulls last) as dedup_number,
              tci.row_id,
              tci.cst_id,
              tci.cst_key,
@@ -94,6 +93,7 @@ from tmp_crm_cust_info tci;
 select distinct tci.cst_gndr
 from tmp_crm_cust_info tci;
 
+-- Eval: crm_prd_info
 -- Temp table for crm_prd_info
 drop table if exists tmp_crm_prd_info;
 create temp table tmp_crm_prd_info
@@ -160,8 +160,7 @@ select tpi.row_id,
        tpi.prd_nm,
        tpi.prd_start_dt,
        (lead(tpi.prd_start_dt)
-        over (partition by tpi.prd_key order by tpi.prd_start_dt) -
-        interval '1 day')::date,
+        over (partition by tpi.prd_key order by tpi.prd_start_dt) - interval '1 day')::date,
        tpi.prd_end_dt
 from tmp_crm_prd_info tpi
 order by prd_id;
@@ -169,8 +168,7 @@ order by prd_id;
 -- Adjust end dates to resolve overlaps
 with next_start as (select tpi.row_id,
                            (lead(tpi.prd_start_dt)
-                            over (partition by tpi.prd_key order by tpi.prd_start_dt) -
-                            interval '1 day')::date new_end_dt,
+                            over (partition by tpi.prd_key order by tpi.prd_start_dt) - interval '1 day')::date new_end_dt,
                            tpi.prd_end_dt
                     from tmp_crm_prd_info tpi)
 update tmp_crm_prd_info tpi
@@ -206,8 +204,7 @@ where tpi.prd_key is null;
 -- Standardize prd_key and other string fields
 select tpi.row_id,
        tpi.prd_id,
-       upper(replace(substring(trim(tpi.prd_key) from 1 for 5), '-',
-                     '_')) cat_id,
+       upper(replace(substring(trim(tpi.prd_key) from 1 for 5), '-', '_')) cat_id,
        upper(substring(trim(tpi.prd_key) from 7)) prd_key,
        upper(trim(tpi.prd_nm)) prd_nm,
        tpi.prd_cost,
@@ -219,3 +216,201 @@ from tmp_crm_prd_info tpi;
 -- Distinct values for prd_line
 select distinct tpi.prd_line
 from tmp_crm_prd_info tpi;
+
+-- Eval: crm_sales_details
+-- Temp table for crm_sales_details
+drop table if exists tmp_crm_sales_details;
+create temp table tmp_crm_sales_details
+(
+    row_id int generated always as identity,
+    sls_ord_num varchar(50),
+    sls_prd_key varchar(50),
+    sls_cust_id int,
+    sls_order_dt varchar(50),
+    sls_ship_dt varchar(50),
+    sls_due_dt varchar(50),
+    sls_sales numeric(10, 2),
+    sls_quantity int,
+    sls_price numeric(10, 2)
+);
+
+-- Copy data from bronze.crm_sales_details
+insert into tmp_crm_sales_details (sls_ord_num, sls_prd_key, sls_cust_id,
+                                   sls_order_dt, sls_ship_dt, sls_due_dt,
+                                   sls_sales, sls_quantity, sls_price)
+select csd.sls_ord_num,
+       csd.sls_prd_key,
+       csd.sls_cust_id,
+       csd.sls_order_dt,
+       csd.sls_ship_dt,
+       csd.sls_due_dt,
+       csd.sls_sales,
+       csd.sls_quantity,
+       csd.sls_price
+from bronze.crm_sales_details csd;
+
+-- Inspect inserted data
+select tsd.row_id,
+       tsd.sls_ord_num,
+       tsd.sls_prd_key,
+       tsd.sls_cust_id,
+       tsd.sls_order_dt,
+       tsd.sls_ship_dt,
+       tsd.sls_due_dt,
+       tsd.sls_sales,
+       tsd.sls_quantity,
+       tsd.sls_price
+from tmp_crm_sales_details tsd;
+
+-- Trim and standardize string fields
+update tmp_crm_sales_details tsd
+set sls_ord_num = upper(trim(tsd.sls_ord_num)),
+    sls_prd_key = upper(trim(tsd.sls_prd_key));
+
+-- Remove rows with invalid product keys
+delete
+from tmp_crm_sales_details tsd
+where tsd.sls_prd_key not in (select cpi.prd_key from silver.crm_prd_info cpi)
+returning *;
+
+-- Remove rows with invalid customer ids
+delete
+from tmp_crm_sales_details tsd
+where tsd.sls_cust_id not in (select cci.cst_id from silver.crm_cust_info cci)
+returning *;
+
+-- Remove rows with null sls_ord_num
+delete
+from tmp_crm_sales_details tsd
+where tsd.sls_ord_num is null;
+
+-- Remove rows with null sls_prd_key
+delete
+from tmp_crm_sales_details tsd
+where tsd.sls_prd_key is null;
+
+-- Remove rows with null sls_cust_id
+delete
+from tmp_crm_sales_details tsd
+where tsd.sls_cust_id is null;
+
+-- Duplicate check on sls_ord_num + sls_prd_key
+select sub.row_id,
+       sub.sls_ord_num,
+       sub.dedup_entry,
+       sub.sls_prd_key,
+       sub.sls_cust_id,
+       sub.sls_order_dt,
+       sub.sls_ship_dt,
+       sub.sls_due_dt,
+       sub.sls_sales,
+       sub.sls_quantity,
+       sub.sls_price
+from (select tsd.row_id,
+             tsd.sls_ord_num,
+             row_number() over (partition by tsd.sls_ord_num, tsd.sls_prd_key) dedup_entry,
+             tsd.sls_prd_key,
+             tsd.sls_cust_id,
+             tsd.sls_order_dt,
+             tsd.sls_ship_dt,
+             tsd.sls_due_dt,
+             tsd.sls_sales,
+             tsd.sls_quantity,
+             tsd.sls_price
+      from tmp_crm_sales_details tsd) sub
+where dedup_entry > 1;
+
+-- Fix invalid date formats
+update tmp_crm_sales_details csd
+set sls_order_dt = case
+                       when length(csd.sls_order_dt) != 8 then null
+                       when length(csd.sls_order_dt) = 8 then csd.sls_order_dt::date end,
+    sls_ship_dt = case
+                      when length(csd.sls_ship_dt) != 8 then null
+                      when length(csd.sls_ship_dt) = 8 then csd.sls_ship_dt::date end,
+    sls_due_dt = case
+                     when length(csd.sls_due_dt) != 8 then null
+                     when length(csd.sls_due_dt) = 8 then csd.sls_due_dt::date end
+returning *;
+
+-- Remove duplicate sls_ord_num + sls_prd_key keeping latest
+delete
+from tmp_crm_sales_details tsd
+where tsd.row_id in (select sub.row_id
+                     from (select tsd.row_id,
+                                  row_number() over (
+                                      partition by tsd.sls_ord_num, tsd.sls_prd_key
+                                      order by tsd.sls_order_dt desc nulls last
+                                  ) dedup_entry
+                           from tmp_crm_sales_details tsd) sub
+                     where sub.dedup_entry > 1)
+returning *;
+
+-- Check invalid date sequences
+select distinct tcd.row_id,
+                tcd.sls_order_dt,
+                tcd.sls_ship_dt,
+                tcd.sls_due_dt
+from tmp_crm_sales_details tcd
+where tcd.sls_order_dt > tcd.sls_ship_dt
+   or tcd.sls_order_dt > tcd.sls_due_dt;
+
+-- Check invalid sales values
+select tsd.row_id,
+       tsd.sls_sales
+from tmp_crm_sales_details tsd
+where tsd.sls_sales is null
+   or tsd.sls_sales <= 0;
+
+-- Check invalid quantity values
+select tsd.row_id,
+       tsd.sls_quantity
+from tmp_crm_sales_details tsd
+where tsd.sls_quantity is null
+   or tsd.sls_quantity <= 0;
+
+-- Check invalid price values
+select tsd.row_id,
+       tsd.sls_price
+from tmp_crm_sales_details tsd
+where tsd.sls_price is null
+   or tsd.sls_price <= 0;
+
+-- Fix sales, quantity, and price
+with updated_values as (select tsd.row_id,
+                               case when tsd.sls_sales is null or tsd.sls_sales <= 0
+                                    then abs(tsd.sls_quantity * tsd.sls_price)
+                                    else tsd.sls_sales end new_sales,
+                               case when tsd.sls_quantity is null or tsd.sls_quantity <= 0
+                                    then abs(tsd.sls_sales / nullif(tsd.sls_price, 0))
+                                    else tsd.sls_quantity end new_quantity,
+                               case when tsd.sls_price is null or tsd.sls_price <= 0
+                                    then abs(tsd.sls_sales / nullif(tsd.sls_quantity, 0))
+                                    else tsd.sls_price end new_price
+                        from tmp_crm_sales_details tsd)
+update tmp_crm_sales_details tsd
+set sls_quantity = upv.new_quantity,
+    sls_sales = upv.new_sales,
+    sls_price = upv.new_price
+from updated_values upv
+where tsd.row_id = upv.row_id
+returning *;
+
+-- Check remaining nulls
+select distinct tsd.sls_ord_num,
+                tsd.sls_prd_key,
+                tsd.sls_cust_id,
+                tsd.sls_order_dt,
+                tsd.sls_ship_dt,
+                tsd.sls_due_dt,
+                tsd.sls_sales,
+                tsd.sls_quantity,
+                tsd.sls_price
+from tmp_crm_sales_details tsd
+where tsd.sls_sales is null
+   or tsd.sls_quantity is null
+   or tsd.sls_price is null;
+
+-- Distinct values for sls_quantity
+select distinct tsd.sls_quantity
+from tmp_crm_sales_details tsd;
