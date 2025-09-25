@@ -8,6 +8,7 @@
 
 -- Drop old silver tables
 drop table if exists silver.crm_cust_info;
+drop table if exists silver.crm_prd_info;
 
 -- CRM: Cleaned customer info
 create table silver.crm_cust_info
@@ -26,7 +27,7 @@ create table silver.crm_cust_info
 create table silver.crm_prd_info
 (
     prd_id int,
-    prd_cat varchar(4),
+    cat_id varchar(5),
     prd_key varchar(15),
     prd_nm varchar(100),
     prd_cost numeric(10, 2),
