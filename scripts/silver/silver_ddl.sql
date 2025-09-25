@@ -10,6 +10,7 @@
 drop table if exists silver.crm_cust_info;
 drop table if exists silver.crm_prd_info;
 drop table if exists silver.crm_sales_details;
+drop table if exists silver.erp_cust_az12;
 
 -- CRM: Cleaned customer info
 create table silver.crm_cust_info
@@ -38,7 +39,7 @@ create table silver.crm_prd_info
     dwh_create_time timestamp default current_timestamp
 );
 
--- CRM: cleaned sales details
+-- CRM: Cleaned sales details
 create table silver.crm_sales_details
 (
     sls_ord_num varchar(20),
@@ -50,5 +51,14 @@ create table silver.crm_sales_details
     sls_sales numeric(10, 2),
     sls_quantity int,
     sls_price numeric(10, 2),
+    dwh_create_time timestamp default current_timestamp
+);
+
+-- ERP: Cleaned customer info
+create table silver.erp_cust_az12
+(
+    cid varchar(15),
+    bdate date,
+    gen varchar(10),
     dwh_create_time timestamp default current_timestamp
 );

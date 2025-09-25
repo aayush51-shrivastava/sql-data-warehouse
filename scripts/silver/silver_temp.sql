@@ -521,6 +521,122 @@ exception
 end;
 $$;
 
+-- Procedure to load silver.erp_cust_az12
+create or replace procedure silver.load_erp_cust_az12()
+    language plpgsql
+as
+$$
+declare
+    batch_start_time timestamp;
+    batch_end_time timestamp;
+    start_time timestamp;
+    end_time timestamp;
+begin
+    batch_start_time := current_timestamp;
+    raise notice 'Loading Silver Layer: erp_cust_az12';
+    raise notice ' ';
+
+    -- Temp table
+    start_time := current_timestamp;
+    raise notice 'Creating Temp Table: tmp_erp_cust_az12';
+    drop table if exists tmp_erp_cust_az12;
+    create temp table tmp_erp_cust_az12
+    (
+        cid varchar(50),
+        bdate date,
+        gen varchar(50)
+    );
+    end_time := current_timestamp;
+    raise notice 'Temp Table Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Load from bronze
+    start_time := current_timestamp;
+    raise notice 'Loading data into tmp_erp_cust_az12 from bronze.erp_cust_az12';
+    insert into tmp_erp_cust_az12 (cid, bdate, gen)
+    select upper(trim(eca.cid)),
+           eca.bdate,
+           trim(eca.gen)
+    from bronze.erp_cust_az12 eca;
+    end_time := current_timestamp;
+    raise notice 'Load Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Standardize cid prefix and gender
+    start_time := current_timestamp;
+    raise notice 'Standardizing cid prefix and gender values';
+    update tmp_erp_cust_az12 tca
+    set cid = case
+                  when substring(tca.cid from 1 for 3) = 'NAS'
+                      then substring(tca.cid from 4)
+                  else tca.cid end,
+        gen = case
+                  when upper(tca.gen) = 'MALE' or upper(tca.gen) = 'M'
+                      then 'Male'
+                  when upper(tca.gen) = 'FEMALE' or upper(tca.gen) = 'F'
+                      then 'Female'
+                  else 'Unknown' end;
+    end_time := current_timestamp;
+    raise notice 'Standardization Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Remove invalid customer references
+    start_time := current_timestamp;
+    raise notice 'Removing rows with cid not in silver.crm_cust_info';
+    delete
+    from tmp_erp_cust_az12 tca
+    where tca.cid not in (select cci.cst_key
+                          from silver.crm_cust_info cci);
+    end_time := current_timestamp;
+    raise notice 'Reference Cleanup Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Truncate and insert into silver
+    start_time := current_timestamp;
+    raise notice 'Truncating Table: silver.erp_cust_az12';
+    truncate table silver.erp_cust_az12;
+    raise notice 'Inserting into silver.erp_cust_az12';
+    insert into silver.erp_cust_az12 (cid, bdate, gen)
+    select tca.cid,
+           tca.bdate,
+           tca.gen
+    from tmp_erp_cust_az12 tca;
+    end_time := current_timestamp;
+    raise notice 'Truncate + Load Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Drop temp table
+    start_time := current_timestamp;
+    raise notice 'Dropping Temp Table: tmp_erp_cust_az12';
+    drop table tmp_erp_cust_az12;
+    end_time := current_timestamp;
+    raise notice 'Drop Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+
+    -- Batch complete
+    batch_end_time := current_timestamp;
+    raise notice ' ';
+    raise notice 'Loaded Silver Layer: erp_cust_az12 Successfully';
+    raise notice 'Total Duration: %s', round(
+            extract(seconds from batch_end_time - batch_start_time), 2);
+    raise notice ' ';
+exception
+    when others then
+        raise notice ' ';
+        raise warning 'Error: %', sqlerrm;
+        raise notice ' ';
+        raise notice 'Rolling Back Changes';
+        rollback;
+end;
+$$;
+
+
 call silver.load_crm_cst_info();
 call silver.load_crm_prd_info();
-call silver.load_crm_sales_details()
+call silver.load_crm_sales_details();
+call silver.load_erp_cust_az12();

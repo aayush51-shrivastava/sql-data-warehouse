@@ -160,7 +160,8 @@ select tpi.row_id,
        tpi.prd_nm,
        tpi.prd_start_dt,
        (lead(tpi.prd_start_dt)
-        over (partition by tpi.prd_key order by tpi.prd_start_dt) - interval '1 day')::date,
+        over (partition by tpi.prd_key order by tpi.prd_start_dt) -
+        interval '1 day')::date,
        tpi.prd_end_dt
 from tmp_crm_prd_info tpi
 order by prd_id;
@@ -168,7 +169,8 @@ order by prd_id;
 -- Adjust end dates to resolve overlaps
 with next_start as (select tpi.row_id,
                            (lead(tpi.prd_start_dt)
-                            over (partition by tpi.prd_key order by tpi.prd_start_dt) - interval '1 day')::date new_end_dt,
+                            over (partition by tpi.prd_key order by tpi.prd_start_dt) -
+                            interval '1 day')::date new_end_dt,
                            tpi.prd_end_dt
                     from tmp_crm_prd_info tpi)
 update tmp_crm_prd_info tpi
@@ -204,7 +206,8 @@ where tpi.prd_key is null;
 -- Standardize prd_key and other string fields
 select tpi.row_id,
        tpi.prd_id,
-       upper(replace(substring(trim(tpi.prd_key) from 1 for 5), '-', '_')) cat_id,
+       upper(replace(substring(trim(tpi.prd_key) from 1 for 5), '-',
+                     '_')) cat_id,
        upper(substring(trim(tpi.prd_key) from 7)) prd_key,
        upper(trim(tpi.prd_nm)) prd_nm,
        tpi.prd_cost,
@@ -308,7 +311,8 @@ select sub.row_id,
        sub.sls_price
 from (select tsd.row_id,
              tsd.sls_ord_num,
-             row_number() over (partition by tsd.sls_ord_num, tsd.sls_prd_key) dedup_entry,
+             row_number()
+             over (partition by tsd.sls_ord_num, tsd.sls_prd_key) dedup_entry,
              tsd.sls_prd_key,
              tsd.sls_cust_id,
              tsd.sls_order_dt,
@@ -324,13 +328,16 @@ where dedup_entry > 1;
 update tmp_crm_sales_details csd
 set sls_order_dt = case
                        when length(csd.sls_order_dt) != 8 then null
-                       when length(csd.sls_order_dt) = 8 then csd.sls_order_dt::date end,
+                       when length(csd.sls_order_dt) = 8
+                           then csd.sls_order_dt::date end,
     sls_ship_dt = case
                       when length(csd.sls_ship_dt) != 8 then null
-                      when length(csd.sls_ship_dt) = 8 then csd.sls_ship_dt::date end,
+                      when length(csd.sls_ship_dt) = 8
+                          then csd.sls_ship_dt::date end,
     sls_due_dt = case
                      when length(csd.sls_due_dt) != 8 then null
-                     when length(csd.sls_due_dt) = 8 then csd.sls_due_dt::date end
+                     when length(csd.sls_due_dt) = 8
+                         then csd.sls_due_dt::date end
 returning *;
 
 -- Remove duplicate sls_ord_num + sls_prd_key keeping latest
@@ -341,7 +348,7 @@ where tsd.row_id in (select sub.row_id
                                   row_number() over (
                                       partition by tsd.sls_ord_num, tsd.sls_prd_key
                                       order by tsd.sls_order_dt desc nulls last
-                                  ) dedup_entry
+                                      ) dedup_entry
                            from tmp_crm_sales_details tsd) sub
                      where sub.dedup_entry > 1)
 returning *;
@@ -378,15 +385,19 @@ where tsd.sls_price is null
 
 -- Fix sales, quantity, and price
 with updated_values as (select tsd.row_id,
-                               case when tsd.sls_sales is null or tsd.sls_sales <= 0
-                                    then abs(tsd.sls_quantity * tsd.sls_price)
-                                    else tsd.sls_sales end new_sales,
-                               case when tsd.sls_quantity is null or tsd.sls_quantity <= 0
-                                    then abs(tsd.sls_sales / nullif(tsd.sls_price, 0))
-                                    else tsd.sls_quantity end new_quantity,
-                               case when tsd.sls_price is null or tsd.sls_price <= 0
-                                    then abs(tsd.sls_sales / nullif(tsd.sls_quantity, 0))
-                                    else tsd.sls_price end new_price
+                               case
+                                   when tsd.sls_sales is null or tsd.sls_sales <= 0
+                                       then abs(tsd.sls_quantity * tsd.sls_price)
+                                   else tsd.sls_sales end new_sales,
+                               case
+                                   when tsd.sls_quantity is null or
+                                        tsd.sls_quantity <= 0
+                                       then abs(tsd.sls_sales / nullif(tsd.sls_price, 0))
+                                   else tsd.sls_quantity end new_quantity,
+                               case
+                                   when tsd.sls_price is null or tsd.sls_price <= 0
+                                       then abs(tsd.sls_sales / nullif(tsd.sls_quantity, 0))
+                                   else tsd.sls_price end new_price
                         from tmp_crm_sales_details tsd)
 update tmp_crm_sales_details tsd
 set sls_quantity = upv.new_quantity,
@@ -414,3 +425,95 @@ where tsd.sls_sales is null
 -- Distinct values for sls_quantity
 select distinct tsd.sls_quantity
 from tmp_crm_sales_details tsd;
+
+-- Eval: erp_cust_az12
+-- Inspect raw data from bronze.erp_cust_az12
+select eca.cid,
+       eca.bdate,
+       eca.gen
+from bronze.erp_cust_az12 eca;
+
+-- Temp table for erp_cust_az12
+drop table if exists tmp_erp_cust_az12;
+create temp table tmp_erp_cust_az12
+(
+    cid varchar(50),
+    bdate date,
+    gen varchar(50)
+);
+
+-- Compare gender formatting with silver.crm_cust_info
+select distinct cst_gndr
+from silver.crm_cust_info;
+
+-- Copy data into tmp_erp_cust_az12 with trimming/uppercasing
+insert into tmp_erp_cust_az12 (cid, bdate, gen)
+select upper(trim(eca.cid)),
+       eca.bdate,
+       trim(eca.gen)
+from bronze.erp_cust_az12 eca;
+
+-- Inspect inserted records
+select tca.cid,
+       tca.bdate,
+       tca.gen
+from tmp_erp_cust_az12 tca;
+
+-- Check distinct prefixes in cid
+select distinct substring(tca.cid from 1 for 5)
+from tmp_erp_cust_az12 tca;
+-- Found prefixes: NASAW and AW000
+
+-- Check distinct prefixes in cst_key from silver.crm_cust_info
+select distinct substring(cci.cst_key from 1 for 5)
+from silver.crm_cust_info cci;
+-- Found prefix: AW000
+
+-- Distinct gender values in tmp_erp_cust_az12
+select distinct tca.gen
+from tmp_erp_cust_az12 tca;
+
+-- Preview transformation logic: replace NAS prefix, standardize gender
+select tca.cid,
+       case
+           when substring(tca.cid from 1 for 3) = 'NAS'
+               then substring(tca.cid from 4)
+           else tca.cid end cleaned_cid,
+       tca.bdate,
+       tca.gen,
+       case
+           when upper(tca.gen) = 'MALE' or upper(tca.gen) = 'M' then 'Male'
+           when upper(tca.gen) = 'FEMALE' or upper(tca.gen) = 'F' then 'Female'
+           else 'Unknown' end fixed_gender
+from tmp_erp_cust_az12 tca;
+
+-- Apply updates: fix NAS prefix and gender values
+update tmp_erp_cust_az12 tca
+set cid = case
+              when substring(tca.cid from 1 for 3) = 'NAS'
+                  then substring(tca.cid from 4)
+              else tca.cid end,
+    gen = case
+              when upper(tca.gen) = 'MALE' then 'Male'
+              when upper(tca.gen) = 'FEMALE' then 'Female'
+              else 'Unknown' end;
+
+-- Inspect updated table
+select tca.cid,
+       tca.bdate,
+       tca.gen
+from tmp_erp_cust_az12 tca;
+
+-- Check for cid values not in silver.crm_cust_info
+select tca.cid
+from tmp_erp_cust_az12 tca
+where tca.cid not in (select cci.cst_key
+                      from silver.crm_cust_info cci);
+-- None found. If any appear, business clarification required.
+-- For now: remove such rows
+delete
+from tmp_erp_cust_az12 tca
+where tca.cid not in (select cci.cst_key
+                      from silver.crm_cust_info cci)
+returning *;
+
