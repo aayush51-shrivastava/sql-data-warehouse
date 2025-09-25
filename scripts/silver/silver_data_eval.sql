@@ -280,3 +280,66 @@ where csd.sls_price is null
 -- integers)
 select distinct csd.sls_quantity
 from silver.crm_sales_details csd;
+
+-- Evaluating silver.erp_cust_az12
+-- Null check: cid (should not exist due to Bronze null removal)
+select eca.cid,
+       eca.bdate,
+       eca.gen,
+       eca.dwh_create_time
+from silver.erp_cust_az12 eca
+where eca.cid is null;
+
+-- Null check: bdate (should not exist due to Bronze validation)
+select eca.cid,
+       eca.bdate,
+       eca.gen,
+       eca.dwh_create_time
+from silver.erp_cust_az12 eca
+where eca.bdate is null;
+
+-- Null check: gen (should not exist due to standardization)
+select eca.cid,
+       eca.bdate,
+       eca.gen,
+       eca.dwh_create_time
+from silver.erp_cust_az12 eca
+where eca.gen is null;
+
+-- Duplicate check: cid (expect no duplicates)
+select sub.dedup_entry,
+       sub.cid,
+       sub.bdate,
+       sub.gen,
+       sub.dwh_create_time
+from (select row_number() over (
+    partition by cid
+    order by dwh_create_time desc nulls last
+    ) as dedup_entry,
+             eca.cid,
+             eca.bdate,
+             eca.gen,
+             eca.dwh_create_time
+      from silver.erp_cust_az12 eca) sub
+where dedup_entry > 1;
+
+-- Standardization check: cid (expected: 8-character alphanumeric codes starting with AW000 or similar)
+select distinct eca.cid
+from silver.erp_cust_az12 eca;
+
+-- Standardization check: gen (expected: Male, Female, Unknown)
+select distinct eca.gen
+from silver.erp_cust_az12 eca;
+
+-- Date validity check: bdate (should be valid and not in future)
+select eca.cid,
+       eca.bdate,
+       eca.gen,
+       eca.dwh_create_time
+from silver.erp_cust_az12 eca
+where eca.bdate > current_date;
+
+-- Referential integrity check: cid in silver.crm_cust_info.cst_key
+select eca.cid
+from silver.erp_cust_az12 eca
+where eca.cid not in (select cci.cst_key from silver.crm_cust_info cci);

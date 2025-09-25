@@ -577,7 +577,10 @@ begin
                       then 'Male'
                   when upper(tca.gen) = 'FEMALE' or upper(tca.gen) = 'F'
                       then 'Female'
-                  else 'Unknown' end;
+                  else 'Unknown' end,
+        bdate = case
+                    when tca.bdate > current_date then null
+                    else tca.bdate end;
     end_time := current_timestamp;
     raise notice 'Standardization Duration: %s', round(
             extract(seconds from end_time - start_time), 2);
