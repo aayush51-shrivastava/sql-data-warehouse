@@ -93,3 +93,128 @@ from tmp_crm_cust_info tci;
 -- Distinct gndr values
 select distinct tci.cst_gndr
 from tmp_crm_cust_info tci;
+
+-- Temp table for crm_prd_info
+drop table if exists tmp_crm_prd_info;
+create temp table tmp_crm_prd_info
+(
+    row_id int generated always as identity,
+    prd_id int,
+    prd_key varchar(50),
+    prd_nm varchar(100),
+    prd_cost numeric(10, 2),
+    prd_line varchar(50),
+    prd_start_dt date,
+    prd_end_dt date
+);
+
+-- Copy data from bronze.crm_prd_info
+insert into tmp_crm_prd_info (prd_id, prd_key, prd_nm, prd_cost, prd_line,
+                              prd_start_dt, prd_end_dt)
+select cpi.prd_id,
+       cpi.prd_key,
+       cpi.prd_nm,
+       cpi.prd_cost,
+       cpi.prd_line,
+       cpi.prd_start_dt,
+       cpi.prd_end_dt
+from bronze.crm_prd_info cpi;
+
+-- Inspect inserted data
+select tpi.row_id,
+       tpi.prd_id,
+       tpi.prd_key,
+       tpi.prd_nm,
+       tpi.prd_cost,
+       tpi.prd_line,
+       tpi.prd_start_dt,
+       tpi.prd_end_dt
+from tmp_crm_prd_info tpi;
+
+-- Remove rows where both prd_id and prd_key are null
+delete
+from tmp_crm_prd_info tpi
+where tpi.prd_id is null
+  and tpi.prd_key is null;
+
+-- Check for invalid historization (start_dt > end_dt)
+select tpi.row_id,
+       tpi.prd_id,
+       tpi.prd_key,
+       tpi.prd_start_dt,
+       tpi.prd_end_dt
+from tmp_crm_prd_info tpi
+where tpi.prd_start_dt > tpi.prd_end_dt;
+
+-- Correct invalid historization by swapping dates
+update tmp_crm_prd_info tpi
+set prd_start_dt = least(tpi.prd_start_dt, tpi.prd_end_dt),
+    prd_end_dt = greatest(tpi.prd_start_dt, tpi.prd_end_dt)
+where tpi.prd_start_dt > tpi.prd_end_dt
+returning *;
+
+-- Preview overlaps in product tenures
+select tpi.row_id,
+       tpi.prd_id,
+       tpi.prd_key,
+       tpi.prd_nm,
+       tpi.prd_start_dt,
+       (lead(tpi.prd_start_dt)
+        over (partition by tpi.prd_key order by tpi.prd_start_dt) -
+        interval '1 day')::date,
+       tpi.prd_end_dt
+from tmp_crm_prd_info tpi
+order by prd_id;
+
+-- Adjust end dates to resolve overlaps
+with next_start as (select tpi.row_id,
+                           (lead(tpi.prd_start_dt)
+                            over (partition by tpi.prd_key order by tpi.prd_start_dt) -
+                            interval '1 day')::date new_end_dt,
+                           tpi.prd_end_dt
+                    from tmp_crm_prd_info tpi)
+update tmp_crm_prd_info tpi
+set prd_end_dt = coalesce(nxt.new_end_dt, nxt.prd_end_dt)
+from next_start nxt
+where tpi.row_id = nxt.row_id
+returning *;
+
+-- Check remaining nulls in prd_id
+select tpi.row_id,
+       tpi.prd_id,
+       tpi.prd_key,
+       tpi.prd_nm,
+       tpi.prd_cost,
+       tpi.prd_line,
+       tpi.prd_start_dt,
+       tpi.prd_end_dt
+from tmp_crm_prd_info tpi
+where tpi.prd_id is null;
+
+-- Check remaining nulls in prd_key
+select tpi.row_id,
+       tpi.prd_id,
+       tpi.prd_key,
+       tpi.prd_nm,
+       tpi.prd_cost,
+       tpi.prd_line,
+       tpi.prd_start_dt,
+       tpi.prd_end_dt
+from tmp_crm_prd_info tpi
+where tpi.prd_key is null;
+
+-- Standardize prd_key and other string fields
+select tpi.row_id,
+       tpi.prd_id,
+       upper(replace(substring(trim(tpi.prd_key) from 1 for 5), '-', '_')) cat_id,
+       upper(substring(trim(tpi.prd_key) from 7)) prd_key,
+       upper(trim(tpi.prd_nm)) prd_nm,
+       tpi.prd_cost,
+       upper(trim(tpi.prd_line)) prd_line,
+       tpi.prd_start_dt,
+       tpi.prd_end_dt
+from tmp_crm_prd_info tpi;
+
+-- Distinct values for prd_line
+select distinct tpi.prd_line
+from tmp_crm_prd_info tpi;
