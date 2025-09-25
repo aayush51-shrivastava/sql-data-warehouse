@@ -156,3 +156,127 @@ select cpi.prd_id,
        cpi.prd_end_dt
 from silver.crm_prd_info cpi
 where cpi.prd_start_dt > cpi.prd_end_dt;
+
+-- Evaluating silver.crm_sales_details
+-- Null check: sls_ord_num (should not exist due to Bronze null removal)
+select csd.sls_ord_num,
+       csd.sls_prd_key,
+       csd.sls_cust_id,
+       csd.sls_order_dt,
+       csd.sls_ship_dt,
+       csd.sls_due_dt,
+       csd.sls_sales,
+       csd.sls_quantity,
+       csd.sls_price,
+       csd.dwh_create_time
+from silver.crm_sales_details csd
+where csd.sls_ord_num is null;
+
+-- Null check: sls_prd_key (should not exist due to Bronze null removal)
+select csd.sls_ord_num,
+       csd.sls_prd_key,
+       csd.sls_cust_id,
+       csd.sls_order_dt,
+       csd.sls_ship_dt,
+       csd.sls_due_dt,
+       csd.sls_sales,
+       csd.sls_quantity,
+       csd.sls_price,
+       csd.dwh_create_time
+from silver.crm_sales_details csd
+where csd.sls_prd_key is null;
+
+-- Null check: sls_cust_id (should not exist due to Bronze null removal)
+select csd.sls_ord_num,
+       csd.sls_prd_key,
+       csd.sls_cust_id,
+       csd.sls_order_dt,
+       csd.sls_ship_dt,
+       csd.sls_due_dt,
+       csd.sls_sales,
+       csd.sls_quantity,
+       csd.sls_price,
+       csd.dwh_create_time
+from silver.crm_sales_details csd
+where csd.sls_cust_id is null;
+
+-- Duplicate check: sls_ord_num + sls_prd_key (expect no duplicates)
+select sub.dedup_entry,
+       sub.sls_ord_num,
+       sub.sls_prd_key,
+       sub.sls_cust_id,
+       sub.sls_order_dt,
+       sub.sls_ship_dt,
+       sub.sls_due_dt,
+       sub.sls_sales,
+       sub.sls_quantity,
+       sub.sls_price
+from (select row_number() over (
+    partition by sls_ord_num, sls_prd_key
+    order by sls_order_dt desc nulls last
+    ) as dedup_entry,
+             csd.sls_ord_num,
+             csd.sls_prd_key,
+             csd.sls_cust_id,
+             csd.sls_order_dt,
+             csd.sls_ship_dt,
+             csd.sls_due_dt,
+             csd.sls_sales,
+             csd.sls_quantity,
+             csd.sls_price
+      from silver.crm_sales_details csd) sub
+where dedup_entry > 1;
+
+-- Standardization check: sls_ord_num (expected: uppercase alphanumeric
+-- with no leading/trailing spaces)
+select distinct csd.sls_ord_num
+from silver.crm_sales_details csd;
+
+-- Standardization check: sls_prd_key (expected: uppercase product codes, e
+-- .g., "BK-R93R-62")
+select distinct csd.sls_prd_key
+from silver.crm_sales_details csd;
+
+-- Date sequence check: sls_order_dt <= sls_ship_dt and sls_order_dt <=
+-- sls_due_dt (should be valid)
+select csd.sls_ord_num,
+       csd.sls_prd_key,
+       csd.sls_cust_id,
+       csd.sls_order_dt,
+       csd.sls_ship_dt,
+       csd.sls_due_dt
+from silver.crm_sales_details csd
+where csd.sls_order_dt > csd.sls_ship_dt
+   or csd.sls_order_dt > csd.sls_due_dt;
+
+-- Invalid sales values check: sls_sales (should be positive)
+select csd.sls_ord_num,
+       csd.sls_prd_key,
+       csd.sls_cust_id,
+       csd.sls_sales
+from silver.crm_sales_details csd
+where csd.sls_sales is null
+   or csd.sls_sales <= 0;
+
+-- Invalid quantity values check: sls_quantity (should be positive)
+select csd.sls_ord_num,
+       csd.sls_prd_key,
+       csd.sls_cust_id,
+       csd.sls_quantity
+from silver.crm_sales_details csd
+where csd.sls_quantity is null
+   or csd.sls_quantity <= 0;
+
+-- Invalid price values check: sls_price (should be positive)
+select csd.sls_ord_num,
+       csd.sls_prd_key,
+       csd.sls_cust_id,
+       csd.sls_price
+from silver.crm_sales_details csd
+where csd.sls_price is null
+   or csd.sls_price <= 0;
+
+-- Distinct values check: sls_quantity (expected: typically 1 or small
+-- integers)
+select distinct csd.sls_quantity
+from silver.crm_sales_details csd;
