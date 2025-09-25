@@ -314,5 +314,213 @@ exception
 end;
 $$;
 
+-- Procedure to load silver.crm_sales_details
+create or replace procedure silver.load_crm_sales_details()
+    language plpgsql
+as
+$$
+declare
+    batch_start_time timestamp;
+    batch_end_time timestamp;
+    start_time timestamp;
+    end_time timestamp;
+begin
+    batch_start_time := current_timestamp;
+    raise notice 'Loading Silver Layer: crm_sales_details';
+    raise notice ' ';
+
+    -- Temp table
+    start_time := current_timestamp;
+    raise notice 'Creating Temp Table: tmp_crm_sales_details';
+    drop table if exists tmp_crm_sales_details;
+    create temp table tmp_crm_sales_details
+    (
+        row_id int generated always as identity,
+        sls_ord_num varchar(50),
+        sls_prd_key varchar(50),
+        sls_cust_id int,
+        sls_order_dt varchar(50),
+        sls_ship_dt varchar(50),
+        sls_due_dt varchar(50),
+        sls_sales numeric(10, 2),
+        sls_quantity int,
+        sls_price numeric(10, 2)
+    );
+    end_time := current_timestamp;
+    raise notice 'Temp Table Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Load from bronze
+    start_time := current_timestamp;
+    raise notice 'Loading data into tmp_crm_sales_details from bronze.crm_sales_details';
+    insert into tmp_crm_sales_details (sls_ord_num, sls_prd_key, sls_cust_id,
+                                       sls_order_dt, sls_ship_dt, sls_due_dt,
+                                       sls_sales, sls_quantity, sls_price)
+    select csd.sls_ord_num,
+           csd.sls_prd_key,
+           csd.sls_cust_id,
+           csd.sls_order_dt,
+           csd.sls_ship_dt,
+           csd.sls_due_dt,
+           csd.sls_sales,
+           csd.sls_quantity,
+           csd.sls_price
+    from bronze.crm_sales_details csd;
+    end_time := current_timestamp;
+    raise notice 'Load Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Standardize string fields
+    start_time := current_timestamp;
+    raise notice 'Trimming and uppercasing order number and product key';
+    update tmp_crm_sales_details tsd
+    set sls_ord_num = upper(trim(tsd.sls_ord_num)),
+        sls_prd_key = upper(trim(tsd.sls_prd_key));
+    end_time := current_timestamp;
+    raise notice 'Standardization Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Remove invalid references and nulls
+    start_time := current_timestamp;
+    raise notice 'Removing invalid product keys';
+    delete
+    from tmp_crm_sales_details tsd
+    where tsd.sls_prd_key not in
+          (select cpi.prd_key from silver.crm_prd_info cpi);
+
+    raise notice 'Removing invalid customer ids';
+    delete
+    from tmp_crm_sales_details tsd
+    where tsd.sls_cust_id not in
+          (select cci.cst_id from silver.crm_cust_info cci);
+
+    raise notice 'Removing rows with null order number, product key, or customer id';
+    delete from tmp_crm_sales_details where sls_ord_num is null;
+    delete from tmp_crm_sales_details where sls_prd_key is null;
+    delete from tmp_crm_sales_details where sls_cust_id is null;
+    end_time := current_timestamp;
+    raise notice 'Reference + Null Cleanup Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Fix invalid date formats
+    start_time := current_timestamp;
+    raise notice 'Fixing invalid date formats';
+    update tmp_crm_sales_details csd
+    set sls_order_dt = case
+                           when length(csd.sls_order_dt) != 8 then null
+                           else csd.sls_order_dt::date end,
+        sls_ship_dt = case
+                          when length(csd.sls_ship_dt) != 8 then null
+                          else csd.sls_ship_dt::date end,
+        sls_due_dt = case
+                         when length(csd.sls_due_dt) != 8 then null
+                         else csd.sls_due_dt::date end;
+    end_time := current_timestamp;
+    raise notice 'Date Fix Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Remove duplicates (keeping latest)
+    start_time := current_timestamp;
+    raise notice 'Removing duplicate order_num + product_key entries';
+    delete
+    from tmp_crm_sales_details tsd
+    where tsd.row_id in (select sub.row_id
+                         from (select tsd.row_id,
+                                      row_number() over (
+                                          partition by tsd.sls_ord_num, tsd.sls_prd_key
+                                          order by tsd.sls_order_dt desc nulls last
+                                          ) dedup_entry
+                               from tmp_crm_sales_details tsd) sub
+                         where sub.dedup_entry > 1);
+    end_time := current_timestamp;
+    raise notice 'Deduplication Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Fix invalid sales, quantity, price
+    start_time := current_timestamp;
+    raise notice 'Correcting invalid sales, quantity, and price values';
+    with updated_values as (select tsd.row_id,
+                                   case
+                                       when tsd.sls_sales is null or tsd.sls_sales <= 0
+                                           then abs(tsd.sls_quantity * tsd.sls_price)
+                                       else tsd.sls_sales end new_sales,
+                                   case
+                                       when tsd.sls_quantity is null or
+                                            tsd.sls_quantity <= 0
+                                           then abs(tsd.sls_sales / nullif(tsd.sls_price, 0))
+                                       else tsd.sls_quantity end new_quantity,
+                                   case
+                                       when tsd.sls_price is null or tsd.sls_price <= 0
+                                           then abs(tsd.sls_sales / nullif(tsd.sls_quantity, 0))
+                                       else tsd.sls_price end new_price
+                            from tmp_crm_sales_details tsd)
+    update tmp_crm_sales_details tsd
+    set sls_quantity = upv.new_quantity,
+        sls_sales = upv.new_sales,
+        sls_price = upv.new_price
+    from updated_values upv
+    where tsd.row_id = upv.row_id;
+    end_time := current_timestamp;
+    raise notice 'Measure Fix Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Truncate and insert into silver
+    start_time := current_timestamp;
+    raise notice 'Truncating Table: silver.crm_sales_details';
+    truncate table silver.crm_sales_details;
+    raise notice 'Inserting into silver.crm_sales_details';
+    insert into silver.crm_sales_details (sls_ord_num, sls_prd_key,
+                                          sls_cust_id,
+                                          sls_order_dt, sls_ship_dt,
+                                          sls_due_dt,
+                                          sls_sales, sls_quantity, sls_price)
+    select tpi.sls_ord_num,
+           tpi.sls_prd_key,
+           tpi.sls_cust_id,
+           tpi.sls_order_dt::date,
+           tpi.sls_ship_dt::date,
+           tpi.sls_due_dt::date,
+           tpi.sls_sales,
+           tpi.sls_quantity,
+           tpi.sls_price
+    from tmp_crm_sales_details tpi;
+    end_time := current_timestamp;
+    raise notice 'Truncate + Load Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Drop temp table
+    start_time := current_timestamp;
+    raise notice 'Dropping Temp Table: tmp_crm_sales_details';
+    drop table tmp_crm_sales_details;
+    end_time := current_timestamp;
+    raise notice 'Drop Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+
+    -- Batch complete
+    batch_end_time := current_timestamp;
+    raise notice ' ';
+    raise notice 'Loaded Silver Layer: crm_sales_details Successfully';
+    raise notice 'Total Duration: %s', round(
+            extract(seconds from batch_end_time - batch_start_time), 2);
+    raise notice ' ';
+exception
+    when others then
+        raise notice ' ';
+        raise warning 'Error: %', sqlerrm;
+        raise notice ' ';
+        raise notice 'Rolling Back Changes';
+        rollback;
+end;
+$$;
+
 call silver.load_crm_cst_info();
 call silver.load_crm_prd_info();
+call silver.load_crm_sales_details()

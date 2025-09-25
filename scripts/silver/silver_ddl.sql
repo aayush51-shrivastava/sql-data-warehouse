@@ -9,6 +9,7 @@
 -- Drop old silver tables
 drop table if exists silver.crm_cust_info;
 drop table if exists silver.crm_prd_info;
+drop table if exists silver.crm_sales_details;
 
 -- CRM: Cleaned customer info
 create table silver.crm_cust_info
@@ -34,5 +35,20 @@ create table silver.crm_prd_info
     prd_line varchar(20),
     prd_start_dt date,
     prd_end_dt date,
+    dwh_create_time timestamp default current_timestamp
+);
+
+-- CRM: cleaned sales details
+create table silver.crm_sales_details
+(
+    sls_ord_num varchar(20),
+    sls_prd_key varchar(15),
+    sls_cust_id int,
+    sls_order_dt date,
+    sls_ship_dt date,
+    sls_due_dt date,
+    sls_sales numeric(10, 2),
+    sls_quantity int,
+    sls_price numeric(10, 2),
     dwh_create_time timestamp default current_timestamp
 );
