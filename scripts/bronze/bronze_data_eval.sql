@@ -206,7 +206,8 @@ where tpi.prd_key is null;
 -- Standardize prd_key and other string fields
 select tpi.row_id,
        tpi.prd_id,
-       upper(replace(substring(trim(tpi.prd_key) from 1 for 5), '-', '_')) cat_id,
+       upper(replace(substring(trim(tpi.prd_key) from 1 for 5), '-',
+                     '_')) cat_id,
        upper(substring(trim(tpi.prd_key) from 7)) prd_key,
        upper(trim(tpi.prd_nm)) prd_nm,
        tpi.prd_cost,
