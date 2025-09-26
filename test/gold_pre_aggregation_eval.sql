@@ -72,3 +72,74 @@ select cci.cst_id customer_id,
 from silver.crm_cust_info cci
          left join silver.erp_cust_az12 eca on cci.cst_key = eca.cid
          left join silver.erp_loc_a101 ela on cci.cst_key = ela.cid;
+
+-- Product data integration across CRM and ERP
+select cpd.prd_id,
+       cpd.cat_id,
+       cpd.prd_key,
+       cpd.prd_nm,
+       cpd.prd_cost,
+       cpd.prd_line,
+       cpd.prd_start_dt,
+       cpd.prd_end_dt
+from silver.crm_prd_info cpd;
+
+-- Current product check: only keep active products (end_dt is null)
+select cpd.prd_id,
+       cpd.cat_id,
+       cpd.prd_key,
+       cpd.prd_nm,
+       cpd.prd_cost,
+       cpd.prd_line,
+       cpd.prd_start_dt,
+       cpd.prd_end_dt
+from silver.crm_prd_info cpd
+where cpd.prd_end_dt is null;
+
+-- Master data rule: CRM product list enriched with ERP categories
+select cpd.prd_id,
+       cpd.cat_id,
+       cpd.prd_key,
+       cpd.prd_nm,
+       cpd.prd_cost,
+       cpd.prd_line,
+       cpd.prd_start_dt,
+       epc.cat,
+       epc.subcat,
+       epc.maintenance
+from silver.crm_prd_info cpd
+         left join silver.erp_px_cat_g1v2 epc on cpd.cat_id = epc.id
+where cpd.prd_end_dt is null;
+
+-- Duplicate check: ensure join doesn’t create multiple rows per product
+select sub.prd_key, count(*)
+from (select cpd.prd_id,
+             cpd.cat_id,
+             cpd.prd_key,
+             cpd.prd_nm,
+             cpd.prd_cost,
+             cpd.prd_line,
+             cpd.prd_start_dt,
+             epc.cat,
+             epc.subcat,
+             epc.maintenance
+      from silver.crm_prd_info cpd
+               left join silver.erp_px_cat_g1v2 epc on cpd.cat_id = epc.id
+      where cpd.prd_end_dt is null) sub
+group by sub.prd_key
+having count(*) > 1;
+
+-- Reference output: candidate query for creating gold-level product view
+select cpd.prd_id product_id,
+       cpd.prd_key product_key,
+       cpd.prd_nm product_name,
+       cpd.cat_id category_id,
+       epc.cat "category",
+       epc.subcat sub_category,
+       epc.maintenance,
+       cpd.prd_cost "cost",
+       cpd.prd_line product_line,
+       cpd.prd_start_dt start_date
+from silver.crm_prd_info cpd
+         left join silver.erp_px_cat_g1v2 epc on cpd.cat_id = epc.id
+where cpd.prd_end_dt is null;
