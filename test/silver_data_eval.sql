@@ -1,8 +1,6 @@
 /*
   Silver Layer Data Evaluation
   Purpose: Validate data quality in silver layer tables
-  Notes:
-    - Extend with additional checks for other silver tables
 */
 
 -- Evaluating silver.crm_cust_info
