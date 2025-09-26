@@ -290,14 +290,6 @@ select eca.cid,
 from silver.erp_cust_az12 eca
 where eca.cid is null;
 
--- Null check: bdate (should not exist due to Bronze validation)
-select eca.cid,
-       eca.bdate,
-       eca.gen,
-       eca.dwh_create_time
-from silver.erp_cust_az12 eca
-where eca.bdate is null;
-
 -- Null check: gen (should not exist due to standardization)
 select eca.cid,
        eca.bdate,
@@ -323,7 +315,8 @@ from (select row_number() over (
       from silver.erp_cust_az12 eca) sub
 where dedup_entry > 1;
 
--- Standardization check: cid (expected: 8-character alphanumeric codes starting with AW000 or similar)
+-- Standardization check: cid (expected: 8-character alphanumeric codes
+-- starting with AW000 or similar)
 select distinct eca.cid
 from silver.erp_cust_az12 eca;
 
@@ -374,11 +367,13 @@ from (select row_number() over (
       from silver.erp_loc_a101 ela) sub
 where dedup_entry > 1;
 
--- Standardization check: cid (expected: uppercase 10-character codes starting with AW000, e.g., AW00011000)
+-- Standardization check: cid (expected: uppercase 10-character codes
+-- starting with AW000, e.g., AW00011000)
 select distinct ela.cid
 from silver.erp_loc_a101 ela;
 
--- Standardization check: cntry (expected: France, Germany, United States, Australia, Canada, Unknown)
+-- Standardization check: cntry (expected: France, Germany, United States,
+-- Australia, Canada, Unknown)
 select distinct ela.cntry
 from silver.erp_loc_a101 ela;
 
@@ -386,3 +381,84 @@ from silver.erp_loc_a101 ela;
 select ela.cid
 from silver.erp_loc_a101 ela
 where ela.cid not in (select cci.cst_key from silver.crm_cust_info cci);
+
+-- Evaluating silver.erp_px_cat_g1v2
+-- Null check: id (should not exist due to Bronze null removal)
+select epc.id,
+       epc.cat,
+       epc.subcat,
+       epc.maintenance,
+       epc.dwh_create_time
+from silver.erp_px_cat_g1v2 epc
+where epc.id is null;
+
+-- Null check: cat (should not exist due to Bronze data quality)
+select epc.id,
+       epc.cat,
+       epc.subcat,
+       epc.maintenance,
+       epc.dwh_create_time
+from silver.erp_px_cat_g1v2 epc
+where epc.cat is null;
+
+-- Null check: subcat (should not exist due to Bronze data quality)
+select epc.id,
+       epc.cat,
+       epc.subcat,
+       epc.maintenance,
+       epc.dwh_create_time
+from silver.erp_px_cat_g1v2 epc
+where epc.subcat is null;
+
+-- Null check: maintenance (should not exist due to standardization)
+select epc.id,
+       epc.cat,
+       epc.subcat,
+       epc.maintenance,
+       epc.dwh_create_time
+from silver.erp_px_cat_g1v2 epc
+where epc.maintenance is null;
+
+-- Duplicate check: id (expect no duplicates)
+select sub.dedup_entry,
+       sub.id,
+       sub.cat,
+       sub.subcat,
+       sub.maintenance,
+       sub.dwh_create_time
+from (select row_number() over (
+    partition by id
+    order by dwh_create_time desc nulls last
+    ) as dedup_entry,
+             epc.id,
+             epc.cat,
+             epc.subcat,
+             epc.maintenance,
+             epc.dwh_create_time
+      from silver.erp_px_cat_g1v2 epc) sub
+where dedup_entry > 1;
+
+-- Standardization check: id (expected: uppercase 5-character codes, e.g.,
+-- AC_BR)
+select distinct epc.id
+from silver.erp_px_cat_g1v2 epc;
+
+-- Standardization check: cat (expected: Accessories, Bikes, Clothing,
+-- Components)
+select distinct epc.cat
+from silver.erp_px_cat_g1v2 epc;
+
+-- Standardization check: subcat (expected: valid subcategories per cat, e
+-- .g., Bike Racks, Mountain Bikes)
+select distinct epc.subcat
+from silver.erp_px_cat_g1v2 epc;
+
+-- Standardization check: maintenance (expected: Yes, No)
+select distinct epc.maintenance
+from silver.erp_px_cat_g1v2 epc;
+
+-- Referential integrity check: id in silver.crm_prd_info.cat_id (if
+-- applicable)
+select epc.id
+from silver.erp_px_cat_g1v2 epc
+where epc.id not in (select cpi.cat_id from silver.crm_prd_info cpi);

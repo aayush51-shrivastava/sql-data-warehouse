@@ -743,8 +743,6 @@ begin
                         then 'Australia'
                     when upper(tla.cntry) in ('CA', 'CAN', 'CANADA')
                         then 'Canada'
-                    when upper(tla.cntry) != '' or upper(tla.cntry) is not null
-                        then tla.cntry
                     else 'Unknown' end;
     end_time := current_timestamp;
     raise notice 'Standardization Duration: %s', round(
@@ -802,8 +800,127 @@ exception
 end;
 $$;
 
+-- Procedure to load silver.erp_px_cat_g1v2
+create or replace procedure silver.load_erp_px_cat_g1v2()
+    language plpgsql
+as
+$$
+declare
+    batch_start_time timestamp;
+    batch_end_time timestamp;
+    start_time timestamp;
+    end_time timestamp;
+begin
+    batch_start_time := current_timestamp;
+    raise notice 'Loading Silver Layer: erp_px_cat_g1v2';
+    raise notice ' ';
+
+    -- Temp table
+    start_time := current_timestamp;
+    raise notice 'Creating Temp Table: tmp_erp_px_cat_g1v2';
+    drop table if exists tmp_erp_px_cat_g1v2;
+    create temp table tmp_erp_px_cat_g1v2
+    (
+        row_id int generated always as identity,
+        id varchar(50),
+        cat varchar(50),
+        subcat varchar(50),
+        maintenance varchar(50)
+    );
+    end_time := current_timestamp;
+    raise notice 'Temp Table Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Load from bronze
+    start_time := current_timestamp;
+    raise notice 'Loading data into tmp_erp_px_cat_g1v2 from bronze.erp_px_cat_g1v2';
+    insert into tmp_erp_px_cat_g1v2 (id, cat, subcat, maintenance)
+    select upper(trim(epc.id)),
+           trim(epc.cat),
+           trim(epc.subcat),
+           trim(epc.maintenance)
+    from bronze.erp_px_cat_g1v2 epc;
+    end_time := current_timestamp;
+    raise notice 'Load Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Deduplicate id
+    start_time := current_timestamp;
+    raise notice 'Deleting duplicate id entries (keeping first occurrence)';
+    delete
+    from tmp_erp_px_cat_g1v2 tpc
+    where tpc.row_id in (select sub.row_id
+                         from (select row_id,
+                                      id,
+                                      row_number() over (
+                                          partition by tpc.id
+                                          ) dedup_entry
+                               from tmp_erp_px_cat_g1v2 tpc) sub
+                         where sub.dedup_entry > 1);
+    end_time := current_timestamp;
+    raise notice 'Deduplication Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Standardize maintenance values
+    start_time := current_timestamp;
+    raise notice 'Standardizing maintenance values';
+    update tmp_erp_px_cat_g1v2 tpc
+    set maintenance = case left(upper(trim(tpc.maintenance)), 1)
+                          when 'Y' then 'Yes'
+                          when 'N' then 'No'
+                          else 'Unknown' end;
+    end_time := current_timestamp;
+    raise notice 'Standardization Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Truncate and insert into silver
+    start_time := current_timestamp;
+    raise notice 'Truncating Table: silver.erp_px_cat_g1v2';
+    truncate table silver.erp_px_cat_g1v2;
+    raise notice 'Inserting into silver.erp_px_cat_g1v2';
+    insert into silver.erp_px_cat_g1v2 (id, cat, subcat, maintenance)
+    select tpc.id,
+           tpc.cat,
+           tpc.subcat,
+           tpc.maintenance
+    from tmp_erp_px_cat_g1v2 tpc;
+    end_time := current_timestamp;
+    raise notice 'Truncate + Load Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Drop temp table
+    start_time := current_timestamp;
+    raise notice 'Dropping Temp Table: tmp_erp_px_cat_g1v2';
+    drop table tmp_erp_px_cat_g1v2;
+    end_time := current_timestamp;
+    raise notice 'Drop Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+
+    -- Batch complete
+    batch_end_time := current_timestamp;
+    raise notice ' ';
+    raise notice 'Loaded Silver Layer: erp_px_cat_g1v2 Successfully';
+    raise notice 'Total Duration: %s', round(
+            extract(seconds from batch_end_time - batch_start_time), 2);
+    raise notice ' ';
+exception
+    when others then
+        raise notice ' ';
+        raise warning 'Error: %', sqlerrm;
+        raise notice ' ';
+        raise notice 'Rolling Back Changes';
+        rollback;
+end;
+$$;
+
 call silver.load_crm_cst_info();
 call silver.load_crm_prd_info();
 call silver.load_crm_sales_details();
 call silver.load_erp_cust_az12();
 call silver.load_erp_loc_a101();
+call silver.load_erp_px_cat_g1v2();

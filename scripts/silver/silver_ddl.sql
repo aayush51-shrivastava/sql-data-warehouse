@@ -71,3 +71,13 @@ create table silver.erp_loc_a101
     cntry varchar(50),
     dwh_create_time timestamp default current_timestamp
 );
+
+-- ERP: Cleaned product category info
+create table silver.erp_px_cat_g1v2
+(
+    id varchar(5),
+    cat varchar(20),
+    subcat varchar(30),
+    maintenance varchar(10),
+    dwh_create_time timestamp default current_timestamp
+);

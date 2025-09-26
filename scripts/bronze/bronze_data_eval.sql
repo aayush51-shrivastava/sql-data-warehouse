@@ -607,3 +607,93 @@ from tmp_erp_loc_a101 tla
 where tla.cid not in (select cci.cst_key
                       from silver.crm_cust_info cci)
 returning *;
+
+-- Eval: erp_px_cat_g1v2
+-- Inspect raw data from bronze.erp_px_cat_g1v2
+select epc.id,
+       epc.cat,
+       epc.subcat,
+       epc.maintenance
+from bronze.erp_px_cat_g1v2 epc;
+
+-- Temp table for erp_px_cat_g1v2
+drop table if exists tmp_erp_px_cat_g1v2;
+create temp table tmp_erp_px_cat_g1v2
+(
+    row_id int generated always as identity,
+    id varchar(50),
+    cat varchar(50),
+    subcat varchar(50),
+    maintenance varchar(50)
+);
+
+-- Copy data into tmp_erp_px_cat_g1v2 with trimming and uppercasing
+insert into tmp_erp_px_cat_g1v2(id, cat, subcat, maintenance)
+select upper(trim(epc.id)),
+       trim(epc.cat),
+       trim(epc.subcat),
+       trim(epc.maintenance)
+from bronze.erp_px_cat_g1v2 epc;
+
+-- Inspect inserted records
+select tpc.row_id,
+       tpc.id,
+       tpc.cat,
+       tpc.subcat,
+       tpc.maintenance
+from tmp_erp_px_cat_g1v2 tpc;
+
+-- Duplicate check: id
+select sub.row_id,
+       sub.id,
+       sub.dedup_entry,
+       sub.cat,
+       sub.subcat,
+       sub.maintenance
+from (select row_id,
+             id,
+             row_number() over (partition by tpc.id) dedup_entry,
+             cat,
+             subcat,
+             maintenance
+      from tmp_erp_px_cat_g1v2 tpc) sub
+where sub.dedup_entry > 1;
+
+-- Remove duplicates: id (keeping first occurrence)
+delete
+from tmp_erp_px_cat_g1v2 tpc
+where tpc.row_id in (select sub.row_id
+                     from (select row_id,
+                                  id,
+                                  row_number() over (
+                                      partition by tpc.id
+                                      ) dedup_entry
+                           from tmp_erp_px_cat_g1v2 tpc) sub
+                     where sub.dedup_entry > 1)
+returning *;
+
+-- Distinct values for cat
+select distinct tpc.cat
+from tmp_erp_px_cat_g1v2 tpc;
+
+-- Distinct values for subcat
+select distinct tpc.subcat
+from tmp_erp_px_cat_g1v2 tpc;
+
+-- Distinct values for maintenance
+select distinct tpc.maintenance
+from tmp_erp_px_cat_g1v2 tpc;
+
+-- Standardize maintenance values
+update tmp_erp_px_cat_g1v2 tpc
+set maintenance = case left(upper(trim(tpc.maintenance)), 1)
+                      when 'Y' then 'Yes'
+                      when 'N' then 'No'
+                      else 'Unknown' end;
+
+-- Inspect updated records
+select tpc.id,
+       tpc.cat,
+       tpc.subcat,
+       tpc.maintenance
+from tmp_erp_px_cat_g1v2 tpc;
