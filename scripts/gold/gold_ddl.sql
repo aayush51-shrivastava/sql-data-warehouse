@@ -9,9 +9,9 @@
 */
 
 -- Drop existing views if they exist
-drop view if exists gold.dim_customers;
-drop view if exists gold.dim_products;
-drop view if exists gold.fact_sales;
+drop view if exists gold.dim_customers cascade;
+drop view if exists gold.dim_products cascade;
+drop view if exists gold.fact_sales cascade;
 
 -- Create customer dimension view
 create view gold.dim_customers as

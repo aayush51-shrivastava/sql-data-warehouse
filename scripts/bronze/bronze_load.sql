@@ -125,5 +125,3 @@ exception
 end;
 $$;
 
--- Run bronze load
-call bronze.load_bronze();

@@ -917,10 +917,3 @@ exception
         rollback;
 end;
 $$;
-
-call silver.load_crm_cst_info();
-call silver.load_crm_prd_info();
-call silver.load_crm_sales_details();
-call silver.load_erp_cust_az12();
-call silver.load_erp_loc_a101();
-call silver.load_erp_px_cat_g1v2();
