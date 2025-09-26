@@ -11,11 +11,11 @@
 -- Drop existing views if they exist
 drop view if exists gold.dim_customers;
 drop view if exists gold.dim_products;
+drop view if exists gold.fact_sales;
 
 -- Create customer dimension view
 create view gold.dim_customers as
-select row_number() over (order by cci.cst_id) customer_number, --
-       -- surrogate number
+select row_number() over (order by cci.cst_id) customer_number, -- surrogate number
        cci.cst_id customer_id,
        cci.cst_key customer_key,
        cci.cst_firstname first_name,
@@ -44,7 +44,22 @@ select row_number() over (order by cpd.prd_start_dt, cpd.prd_id)
        epc.maintenance,
        cpd.prd_cost "cost",
        cpd.prd_line product_line,
-       cpd.prd_start_dt start_date
+       cpd.prd_start_dt start_date,
+       cpd.prd_end_dt end_date
 from silver.crm_prd_info cpd
-         left join silver.erp_px_cat_g1v2 epc on cpd.cat_id = epc.id
-where cpd.prd_end_dt is null;
+         left join silver.erp_px_cat_g1v2 epc on cpd.cat_id = epc.id;
+
+-- Building gold.fact_sales view
+create view gold.fact_sales as
+select csd.sls_ord_num order_number,
+       dpr.product_number,  -- surrogate key from gold.dim_products
+       dcs.customer_number, -- surrogate key from gold.dim_customers
+       csd.sls_order_dt order_date,
+       csd.sls_ship_dt shipping_date,
+       csd.sls_due_dt due_date,
+       csd.sls_sales sales_amount,
+       csd.sls_quantity quantity,
+       csd.sls_price price
+from silver.crm_sales_details csd
+         left join gold.dim_products dpr on csd.sls_prd_key = dpr.product_key
+         left join gold.dim_customers dcs on csd.sls_cust_id = dcs.customer_id;
