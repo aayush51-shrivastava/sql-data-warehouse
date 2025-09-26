@@ -11,6 +11,7 @@ drop table if exists silver.crm_cust_info;
 drop table if exists silver.crm_prd_info;
 drop table if exists silver.crm_sales_details;
 drop table if exists silver.erp_cust_az12;
+drop table if exists silver.erp_loc_a101;
 
 -- CRM: Cleaned customer info
 create table silver.crm_cust_info
@@ -60,5 +61,13 @@ create table silver.erp_cust_az12
     cid varchar(15),
     bdate date,
     gen varchar(10),
+    dwh_create_time timestamp default current_timestamp
+);
+
+-- ERP: Cleaned customer location info
+create table silver.erp_loc_a101
+(
+    cid varchar(15),
+    cntry varchar(50),
     dwh_create_time timestamp default current_timestamp
 );

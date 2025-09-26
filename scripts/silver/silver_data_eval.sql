@@ -343,3 +343,46 @@ where eca.bdate > current_date;
 select eca.cid
 from silver.erp_cust_az12 eca
 where eca.cid not in (select cci.cst_key from silver.crm_cust_info cci);
+
+-- Evaluating silver.erp_loc_a101
+-- Null check: cid (should not exist due to Bronze null removal)
+select ela.cid,
+       ela.cntry,
+       ela.dwh_create_time
+from silver.erp_loc_a101 ela
+where ela.cid is null;
+
+-- Null check: cntry (should not exist due to standardization)
+select ela.cid,
+       ela.cntry,
+       ela.dwh_create_time
+from silver.erp_loc_a101 ela
+where ela.cntry is null;
+
+-- Duplicate check: cid (expect no duplicates)
+select sub.dedup_entry,
+       sub.cid,
+       sub.cntry,
+       sub.dwh_create_time
+from (select row_number() over (
+    partition by cid
+    order by dwh_create_time desc nulls last
+    ) as dedup_entry,
+             ela.cid,
+             ela.cntry,
+             ela.dwh_create_time
+      from silver.erp_loc_a101 ela) sub
+where dedup_entry > 1;
+
+-- Standardization check: cid (expected: uppercase 10-character codes starting with AW000, e.g., AW00011000)
+select distinct ela.cid
+from silver.erp_loc_a101 ela;
+
+-- Standardization check: cntry (expected: France, Germany, United States, Australia, Canada, Unknown)
+select distinct ela.cntry
+from silver.erp_loc_a101 ela;
+
+-- Referential integrity check: cid in silver.crm_cust_info.cst_key
+select ela.cid
+from silver.erp_loc_a101 ela
+where ela.cid not in (select cci.cst_key from silver.crm_cust_info cci);

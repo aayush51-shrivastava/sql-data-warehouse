@@ -542,6 +542,7 @@ begin
     drop table if exists tmp_erp_cust_az12;
     create temp table tmp_erp_cust_az12
     (
+        row_id int generated always as identity,
         cid varchar(50),
         bdate date,
         gen varchar(50)
@@ -583,6 +584,24 @@ begin
                     else tca.bdate end;
     end_time := current_timestamp;
     raise notice 'Standardization Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Deduplicate cid
+    start_time := current_timestamp;
+    raise notice 'Deleting duplicate cid entries (keeping first occurrence)';
+    delete
+    from tmp_erp_cust_az12 tca
+    where tca.row_id not in (select sub.row_id
+                             from (select row_id,
+                                          row_number() over (
+                                              partition by cid
+                                              order by row_id
+                                              ) as dedup_entry
+                                   from tmp_erp_cust_az12) sub
+                             where dedup_entry = 1);
+    end_time := current_timestamp;
+    raise notice 'Deduplication Duration: %s', round(
             extract(seconds from end_time - start_time), 2);
     raise notice ' ';
 
@@ -638,8 +657,153 @@ exception
 end;
 $$;
 
+-- Procedure to load silver.erp_loc_a101
+create or replace procedure silver.load_erp_loc_a101()
+    language plpgsql
+as
+$$
+declare
+    batch_start_time timestamp;
+    batch_end_time timestamp;
+    start_time timestamp;
+    end_time timestamp;
+begin
+    batch_start_time := current_timestamp;
+    raise notice 'Loading Silver Layer: erp_loc_a101';
+    raise notice ' ';
+
+    -- Temp table
+    start_time := current_timestamp;
+    raise notice 'Creating Temp Table: tmp_erp_loc_a101';
+    drop table if exists tmp_erp_loc_a101;
+    create temp table tmp_erp_loc_a101
+    (
+        row_id int generated always as identity,
+        cid varchar(50),
+        cntry varchar(50)
+    );
+    end_time := current_timestamp;
+    raise notice 'Temp Table Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Load from bronze
+    start_time := current_timestamp;
+    raise notice 'Loading data into tmp_erp_loc_a101 from bronze.erp_loc_a101';
+    insert into tmp_erp_loc_a101 (cid, cntry)
+    select upper(replace(trim(tla.cid), '-', '')),
+           trim(tla.cntry)
+    from bronze.erp_loc_a101 tla;
+    end_time := current_timestamp;
+    raise notice 'Load Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Remove rows with null cid
+    start_time := current_timestamp;
+    raise notice 'Deleting rows with null cid';
+    delete
+    from tmp_erp_loc_a101 tla
+    where tla.cid is null;
+    end_time := current_timestamp;
+    raise notice 'Null Removal Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Deduplicate cid
+    start_time := current_timestamp;
+    raise notice 'Deleting duplicate cid entries (keeping first occurrence)';
+    delete
+    from tmp_erp_loc_a101 tla
+    where tla.row_id in (select sub.row_id
+                         from (select tla.row_id,
+                                      row_number() over (
+                                          partition by tla.cid
+                                          order by tla.cntry nulls last
+                                          ) dedup_entry
+                               from tmp_erp_loc_a101 tla) sub
+                         where sub.dedup_entry > 1);
+    end_time := current_timestamp;
+    raise notice 'Deduplication Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Standardize cntry values
+    start_time := current_timestamp;
+    raise notice 'Standardizing cntry values';
+    update tmp_erp_loc_a101 tla
+    set cntry = case
+                    when upper(tla.cntry) in ('FR', 'FRANCE', 'FRA')
+                        then 'France'
+                    when upper(tla.cntry) in ('DE', 'DEU', 'GERMANY')
+                        then 'Germany'
+                    when upper(tla.cntry) in ('US', 'USA', 'UNITED STATES')
+                        then 'United States'
+                    when upper(tla.cntry) in ('AU', 'AUS', 'AUSTRALIA')
+                        then 'Australia'
+                    when upper(tla.cntry) in ('CA', 'CAN', 'CANADA')
+                        then 'Canada'
+                    when upper(tla.cntry) != '' or upper(tla.cntry) is not null
+                        then tla.cntry
+                    else 'Unknown' end;
+    end_time := current_timestamp;
+    raise notice 'Standardization Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Remove invalid customer references
+    start_time := current_timestamp;
+    raise notice 'Removing rows with cid not in silver.crm_cust_info';
+    delete
+    from tmp_erp_loc_a101 tla
+    where tla.cid not in (select cci.cst_key
+                          from silver.crm_cust_info cci);
+    end_time := current_timestamp;
+    raise notice 'Reference Cleanup Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Truncate and insert into silver
+    start_time := current_timestamp;
+    raise notice 'Truncating Table: silver.erp_loc_a101';
+    truncate table silver.erp_loc_a101;
+    raise notice 'Inserting into silver.erp_loc_a101';
+    insert into silver.erp_loc_a101 (cid, cntry)
+    select tla.cid,
+           tla.cntry
+    from tmp_erp_loc_a101 tla;
+    end_time := current_timestamp;
+    raise notice 'Truncate + Load Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+    raise notice ' ';
+
+    -- Drop temp table
+    start_time := current_timestamp;
+    raise notice 'Dropping Temp Table: tmp_erp_loc_a101';
+    drop table tmp_erp_loc_a101;
+    end_time := current_timestamp;
+    raise notice 'Drop Duration: %s', round(
+            extract(seconds from end_time - start_time), 2);
+
+    -- Batch complete
+    batch_end_time := current_timestamp;
+    raise notice ' ';
+    raise notice 'Loaded Silver Layer: erp_loc_a101 Successfully';
+    raise notice 'Total Duration: %s', round(
+            extract(seconds from batch_end_time - batch_start_time), 2);
+    raise notice ' ';
+exception
+    when others then
+        raise notice ' ';
+        raise warning 'Error: %', sqlerrm;
+        raise notice ' ';
+        raise notice 'Rolling Back Changes';
+        rollback;
+end;
+$$;
 
 call silver.load_crm_cst_info();
 call silver.load_crm_prd_info();
 call silver.load_crm_sales_details();
 call silver.load_erp_cust_az12();
+call silver.load_erp_loc_a101();

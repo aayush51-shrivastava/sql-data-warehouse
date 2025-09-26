@@ -517,3 +517,93 @@ where tca.cid not in (select cci.cst_key
                       from silver.crm_cust_info cci)
 returning *;
 
+-- Eval: erp_loc_a101
+-- Inspect raw data from bronze.erp_loc_a101
+select ela.cid,
+       ela.cntry
+from bronze.erp_loc_a101 ela;
+-- Example: cid has dashes like 'AW-00011000'
+
+-- Compare cid format with silver.erp_cust_az12
+select eca.cid
+from silver.erp_cust_az12 eca;
+-- Example: cid has no dashes like 'AW00011000'
+
+-- Temp table for erp_loc_a101
+drop table if exists tmp_erp_loc_a101;
+create temp table tmp_erp_loc_a101
+(
+    row_id int generated always as identity,
+    cid varchar(50),
+    cntry varchar(50)
+);
+
+-- Copy data into tmp_erp_loc_a101 with trimming, uppercasing, dash removal
+insert into tmp_erp_loc_a101 (cid, cntry)
+select upper(replace(trim(tla.cid), '-', '')),
+       trim(tla.cntry)
+from bronze.erp_loc_a101 tla;
+
+-- Inspect inserted records
+select tla.cid,
+       tla.cntry
+from tmp_erp_loc_a101 tla;
+
+-- Null check: cid
+delete
+from tmp_erp_loc_a101 tla
+where tla.cid is null
+returning *;
+
+-- Duplicate check: cid
+select sub.dedup_entry,
+       sub.cid,
+       sub.cntry
+from (select row_number() over (
+    partition by tla.cid
+    order by tla.cntry nulls last
+    ) dedup_entry,
+             tla.cid,
+             tla.cntry
+      from tmp_erp_loc_a101 tla) sub
+where sub.dedup_entry > 1;
+
+-- Remove duplicate cid (keeping first occurrence)
+delete
+from tmp_erp_loc_a101 tla
+where tla.row_id in (select sub.row_id
+                     from (select tla.row_id,
+                                  row_number() over (
+                                      partition by tla.cid
+                                      order by tla.cntry nulls last
+                                      ) dedup_entry
+                           from tmp_erp_loc_a101 tla) sub
+                     where sub.dedup_entry > 1)
+returning *;
+
+-- Standardization check: cntry values
+select distinct tla.cntry
+from tmp_erp_loc_a101 tla;
+
+-- Standardize cntry values
+update tmp_erp_loc_a101 tla
+set cntry = case
+                when upper(tla.cntry) in ('FR', 'FRANCE', 'FRA') then 'France'
+                when upper(tla.cntry) in ('DE', 'DEU', 'GERMANY')
+                    then 'Germany'
+                when upper(tla.cntry) in ('US', 'USA', 'UNITED STATES')
+                    then 'United States'
+                when upper(tla.cntry) in ('AU', 'AUS', 'AUSTRALIA')
+                    then 'Australia'
+                when upper(tla.cntry) in ('CA', 'CAN', 'CANADA') then 'Canada'
+                when upper(tla.cntry) != '' or upper(tla.cntry) is not null
+                    then tla.cntry
+                else 'Unknown' end
+returning *;
+
+-- Referential integrity check: cid in silver.crm_cust_info.cst_key
+delete
+from tmp_erp_loc_a101 tla
+where tla.cid not in (select cci.cst_key
+                      from silver.crm_cust_info cci)
+returning *;
