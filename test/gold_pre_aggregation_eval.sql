@@ -186,9 +186,3 @@ from silver.crm_sales_details csd
          left join gold.dim_products dpr on csd.sls_prd_key = dpr.product_key
          left join gold.dim_customers dcs on csd.sls_cust_id = dcs.customer_id
 where dcs.customer_number is null;
-
-select *
-from gold.fact_sales;
-
-select *
-from gold.dim_products;
